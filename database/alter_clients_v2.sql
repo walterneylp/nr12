@@ -1,0 +1,12 @@
+-- Migration to add detailed address and contact info to clients table
+ALTER TABLE clients
+ADD COLUMN IF NOT EXISTS address TEXT,
+ADD COLUMN IF NOT EXISTS number TEXT,
+ADD COLUMN IF NOT EXISTS neighborhood TEXT,
+ADD COLUMN IF NOT EXISTS city TEXT,
+ADD COLUMN IF NOT EXISTS state TEXT,
+ADD COLUMN IF NOT EXISTS zip_code TEXT,
+ADD COLUMN IF NOT EXISTS phone TEXT,
+ADD COLUMN IF NOT EXISTS email TEXT,
+ADD COLUMN IF NOT EXISTS contact_name TEXT,
+ADD COLUMN IF NOT EXISTS technical_manager TEXT;
