@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # NR12 Frontend Application
+  # ============================================
+  nr12-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nr12-app
+    ports:
+      - "3000:80"
+    environment:
+      # Usar Supabase Cloud (padrão)
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-https://wrwzjqkcdiecdhxhipsp.supabase.co}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indyd3pqcWtjZGllY2RoeGhpcHNwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1OTE4NjMsImV4cCI6MjA4NjE2Nzg2M30.SYF75adrr1XaejA4th3151O-CT2x0nv9mUkqVxSCOCo}
+    networks:
+      - nr12-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================
+  # Supabase Local (Opcional - descomente para usar)
+  # ============================================
+  # Descomente as linhas abaixo se quiser rodar Supabase localmente
+  # supabase-db:
+  #   image: supabase/postgres:15.1.0.147
+  #   container_name: nr12-supabase-db
+  #   environment:
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_DB: postgres
+  #   volumes:
+  #     - supabase-db-data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   networks:
+  #     - nr12-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+networks:
+  nr12-network:
+    driver: bridge
+
+# volumes:
+#   supabase-db-data:
