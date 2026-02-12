@@ -163,13 +163,22 @@ export function DashboardAlerts() {
     }
 
     if (error) {
+        // Extrair mensagem de erro do objeto
+        const errorMessage = error instanceof Error 
+            ? error.message 
+            : typeof error === 'object' && error !== null && 'message' in error
+                ? String((error as any).message)
+                : 'Erro desconhecido ao carregar alertas';
+        
+        console.error('Erro no DashboardAlerts:', error);
+        
         return (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6">
                 <div className="flex items-center gap-3">
                     <AlertTriangle className="h-6 w-6 text-red-600" />
                     <div>
                         <h3 className="font-medium text-red-800 dark:text-red-200">Erro ao carregar alertas</h3>
-                        <p className="text-sm text-red-600 dark:text-red-300">{String(error)}</p>
+                        <p className="text-sm text-red-600 dark:text-red-300">{errorMessage}</p>
                     </div>
                 </div>
                 <button
