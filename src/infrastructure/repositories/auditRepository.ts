@@ -31,24 +31,115 @@ export interface AuditFilters {
     searchTerm?: string;
 }
 
+// Helper para mapear action -> action_label
+function getActionLabel(action: string): string {
+    const labels: Record<string, string> = {
+        'CREATE': 'Criação',
+        'UPDATE': 'Atualização',
+        'DELETE': 'Exclusão',
+        'STATUS_CHANGE': 'Mudança de Status',
+        'EXPORT': 'Exportação',
+        'SIGN': 'Assinatura',
+        'LOGIN': 'Login',
+        'LOGOUT': 'Logout',
+        'VIEW': 'Visualização',
+        'DOWNLOAD': 'Download',
+        'UPLOAD': 'Upload'
+    };
+    return labels[action] || action;
+}
+
+// Helper para mapear entity_type -> entity_type_label
+function getEntityTypeLabel(entityType: string): string {
+    const labels: Record<string, string> = {
+        'client': 'Cliente',
+        'machine': 'Máquina',
+        'report': 'Laudo',
+        'site': 'Local',
+        'training': 'Treinamento',
+        'job': 'Ordem de Serviço',
+        'action_item': 'Plano de Ação',
+        'risk_entry': 'Avaliação de Risco'
+    };
+    return labels[entityType] || entityType;
+}
+
+// Adicionar labels aos eventos
+function addLabels(events: AuditEvent[]): AuditEvent[] {
+    return events.map(event => ({
+        ...event,
+        action_label: getActionLabel(event.action),
+        entity_type_label: getEntityTypeLabel(event.entity_type)
+    }));
+}
+
 export const auditRepository = {
     async log(event: Omit<AuditEvent, 'id' | 'tenant_id' | 'created_at'>): Promise<void> {
         const { error } = await supabase
             .from('audit_events')
             .insert({
                 ...event,
-                tenant_id: (await supabase.auth.getUser()).data.user?.id // Será sobrescrito pelo trigger/RLS
+                tenant_id: (await supabase.auth.getUser()).data.user?.id
             });
 
         if (error) {
             console.error('Erro ao registrar auditoria:', error);
-            // Não lança erro para não quebrar a operação principal
         }
     },
 
     async getAll(filters?: AuditFilters, limit: number = 100, offset: number = 0): Promise<AuditEvent[]> {
+        try {
+            // Tentar usar a view primeiro
+            let query = supabase
+                .from('audit_summary')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .range(offset, offset + limit - 1);
+
+            if (filters?.entityType) {
+                query = query.eq('entity_type', filters.entityType);
+            }
+
+            if (filters?.action) {
+                query = query.eq('action', filters.action);
+            }
+
+            if (filters?.userId) {
+                query = query.eq('actor_user_id', filters.userId);
+            }
+
+            if (filters?.startDate) {
+                query = query.gte('created_at', filters.startDate);
+            }
+
+            if (filters?.endDate) {
+                query = query.lte('created_at', filters.endDate);
+            }
+
+            if (filters?.searchTerm) {
+                query = query.or(`entity_name.ilike.%${filters.searchTerm}%,actor_email.ilike.%${filters.searchTerm}%,changes_summary.ilike.%${filters.searchTerm}%`);
+            }
+
+            const { data, error } = await query;
+
+            if (error) {
+                // Se a view não existir, fallback para a tabela
+                if (error.message?.includes('audit_summary') || error.code === '42P01') {
+                    return this.getAllFromTable(filters, limit, offset);
+                }
+                throw error;
+            }
+            return data || [];
+        } catch (err) {
+            // Fallback para tabela direta se qualquer erro ocorrer
+            return this.getAllFromTable(filters, limit, offset);
+        }
+    },
+
+    // Método fallback que usa a tabela diretamente
+    async getAllFromTable(filters?: AuditFilters, limit: number = 100, offset: number = 0): Promise<AuditEvent[]> {
         let query = supabase
-            .from('audit_summary')
+            .from('audit_events')
             .select('*')
             .order('created_at', { ascending: false })
             .range(offset, offset + limit - 1);
@@ -80,31 +171,73 @@ export const auditRepository = {
         const { data, error } = await query;
 
         if (error) throw error;
-        return data || [];
+        return addLabels(data || []);
     },
 
     async getByEntity(entityType: string, entityId: UUID): Promise<AuditEvent[]> {
+        try {
+            const { data, error } = await supabase
+                .from('audit_summary')
+                .select('*')
+                .eq('entity_type', entityType)
+                .eq('entity_id', entityId)
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                if (error.message?.includes('audit_summary') || error.code === '42P01') {
+                    return this.getByEntityFromTable(entityType, entityId);
+                }
+                throw error;
+            }
+            return data || [];
+        } catch {
+            return this.getByEntityFromTable(entityType, entityId);
+        }
+    },
+
+    async getByEntityFromTable(entityType: string, entityId: UUID): Promise<AuditEvent[]> {
         const { data, error } = await supabase
-            .from('audit_summary')
+            .from('audit_events')
             .select('*')
             .eq('entity_type', entityType)
             .eq('entity_id', entityId)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
-        return data || [];
+        return addLabels(data || []);
     },
 
     async getByUser(userId: UUID, limit: number = 50): Promise<AuditEvent[]> {
+        try {
+            const { data, error } = await supabase
+                .from('audit_summary')
+                .select('*')
+                .eq('actor_user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(limit);
+
+            if (error) {
+                if (error.message?.includes('audit_summary') || error.code === '42P01') {
+                    return this.getByUserFromTable(userId, limit);
+                }
+                throw error;
+            }
+            return data || [];
+        } catch {
+            return this.getByUserFromTable(userId, limit);
+        }
+    },
+
+    async getByUserFromTable(userId: UUID, limit: number = 50): Promise<AuditEvent[]> {
         const { data, error } = await supabase
-            .from('audit_summary')
+            .from('audit_events')
             .select('*')
             .eq('actor_user_id', userId)
             .order('created_at', { ascending: false })
             .limit(limit);
 
         if (error) throw error;
-        return data || [];
+        return addLabels(data || []);
     },
 
     async getStats(): Promise<{
